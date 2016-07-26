@@ -1,0 +1,11 @@
+{
+  "name": "node-token-jwt",
+  "main": "server.js",
+  "dependencies": {
+    "body-parser": "^1.15.1",
+    "couchdb": "^0.3.8",
+    "express": "^4.13.4",
+    "jsonwebtoken": "^7.0.0",
+    "nano": "^6.2.0"
+  }
+}
