@@ -105,7 +105,7 @@ apiRoutes.post('/forgotPassword', function (req, res) {
                     };
 
                     mailgun.messages().send(data, function (error, body) {
-                        console.log(body);
+                        res.send({ status: 200 });
                     });
                     testUsername = true;
                 }
