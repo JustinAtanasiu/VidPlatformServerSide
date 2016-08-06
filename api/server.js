@@ -1,6 +1,8 @@
 var config = require('./config');
 var express = require('express');
+var emailExistence = require('email-existence');
 var app = express();
+var cors = require('cors');
 app.set('superSecret', config.secret); 
 app.set('database', config.database);
 app.set('dbSecret', config.dbSecret);
@@ -21,14 +23,17 @@ app.get('/', function(req, res) {
 
 app.listen(port);
 console.log('Connected at http://localhost:' + port);
+app.use(cors());
+
 
 var apiRoutes = express.Router();
 
-//  apiRoutes.get('/users', function (req, res) {
-//      vidplatformuser.list({include_docs: true}, function (err, response) {
-//         res.send(response.rows);
-//      });
-//  });
+ apiRoutes.get('/users', function (req, res) {
+     vidplatformuser.list({include_docs: true}, function (err, response) {
+        res.send(response.rows);
+     });
+ });
+ 
 
 apiRoutes.post('/signUp', function (req, res) { 
     var data = req.body;
@@ -41,18 +46,25 @@ apiRoutes.post('/signUp', function (req, res) {
 }); 
 
 apiRoutes.post('/checkUsers', function (req, res) {
-    var testUsername = false;
-    vidplatformuser.list({ include_docs: true }, function (err, response) {
-        if (response && response.rows)
-            (response.rows).forEach(function (element) {
-                if (element.doc.username === req.body.username) {
-                    res.send({ status: 400 });
-                    testUsername = true;
-                }
-            }, this);
-        if (!testUsername)
-            res.send({ status: 200 });
-    });
+    emailExistence.check(req.body.username, function (err, resp) {
+         if(resp) {     
+         var testUsername = false;
+         vidplatformuser.list({ include_docs: true }, function (err, response) {
+             if (response && response.rows)
+                 (response.rows).forEach(function (element) {
+                     if (element.doc.username === req.body.username) {
+                         res.send({ status: 400 });
+                         testUsername = true;
+                     }
+                 }, this);
+             if (!testUsername)
+                 res.send({ status: 200 });
+         });
+         } else {
+             res.send({status: 404})
+         }
+         
+    }); 
 });
 
 apiRoutes.post('/authenticate', function (req, res) { 
