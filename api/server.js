@@ -6,6 +6,9 @@ var request = require('request');
 var crypto = require('crypto');
 var bodyParser = require('body-parser');
 var jwt = require('jsonwebtoken');
+var passport = require('passport')
+var FacebookStrategy = require('passport-facebook').Strategy
+
 var port = 7211;
 app.set('superSecret', config.secret);
 app.set('database', config.database);
@@ -14,6 +17,8 @@ app.set('mail', config.mail);
 app.set('mailgunSecret', config.mailgunSecret);
 app.set('mailgunDomain', config.mailgunDomain);
 app.set('mailgunPrivateSecret', config.mailgunPrivateSecret);
+app.set('facebook', config.facebook);
+app.set('fbSecret', config.fbSecret);
 var nano = require('nano')('http://' + app.get('database') + ':' + app.get('dbSecret') + '@localhost:5984');
 var vidplatformuser = nano.db.use('vidplatformusers');
 var mailgun = require('mailgun-js')({ apiKey: app.get('mailgunPrivateSecret'), domain: app.get('mailgunDomain') });
@@ -39,6 +44,9 @@ app.listen(port);
 console.log('Connected at http://localhost:' + port);
 app.use(cors());
 
+app.use(express.static('/public'));
+app.use(passport.initialize());
+app.use(passport.session());
 
 var apiRoutes = express.Router();
 
@@ -129,7 +137,7 @@ apiRoutes.get('/resetPass', function (req, res) {
                             from: '<support@adcha.com>',
                             to: element.doc.username,
                             subject: 'AdCha Reset Password',
-                            text: 'Your password has been reset. The temporary password is: ' + nonHashPass  + ' . Note that this password is temporary. Please change it as soon as possible.'
+                            text: 'Your password has been reset. The temporary password is: ' + nonHashPass + ' . Note that this password is temporary. Please change it as soon as possible.'
                         };
 
                         mailgun.messages().send(data, function (error, body) {
@@ -141,6 +149,71 @@ apiRoutes.get('/resetPass', function (req, res) {
         res.redirect('http://localhost:8083');
     });
 })
+
+passport.use(new FacebookStrategy({
+    //Information stored on config/auth.js
+    clientID: app.get('facebook'),
+    clientSecret: app.get('fbSecret'),
+    callbackURL: 'http://localhost:7211/api/auth/facebook/callback',
+    profileFields: ['id', 'emails', 'displayName', 'name', 'gender'],
+    passReqToCallback: true
+
+}, function (req, accessToken, refreshToken, profile, done) {
+    //find or add user
+    var testUsername = false;
+    profile.token = jwt.sign({ id: profile.id }, app.get('superSecret'), {
+        expiresIn: 432000 //un token tine 5 zile. pe sign in poate ar merge resetat
+    });
+    vidplatformuser.list({ include_docs: true }, function (err, response) {
+        profile.username = profile.emails[0].value;
+        if (response && response.rows)
+            (response.rows).forEach(function (element) {
+                if (element.id === profile.id) {
+                    testUsername = true;
+                    done(null, profile, req);
+                }
+            }, this);
+        if (!testUsername) {
+            var user = JSON.parse(profile._raw);
+            vidplatformuser.insert(user, profile.id, function (err, body) {
+                console.log('Added user ' + profile.username);
+            });
+            done(null, profile, req)
+        }
+    });
+}));
+
+passport.serializeUser(function (user, done) {
+    done(null, user.id);
+});
+
+passport.deserializeUser(function (id, done) {
+    vidplatformuser.list({ include_docs: true }, function (err, response) {
+        var foundUser = false;
+        if (response && response.rows) {
+            response.rows.forEach(function (element) {
+                if (element.doc.username === req.body.username && element.doc.password === req.body.password) {
+                    foundUser = element.doc;
+                    done(err, foundUser);
+                }
+            }, this);
+        }
+        if (!foundUser) {
+            done({ err: 'No user found' });
+        }
+    });
+});
+
+apiRoutes.get('/auth/facebook', passport.authenticate('facebook', { scope: ['email'] }));
+
+apiRoutes.get('/auth/facebook/callback',
+    passport.authenticate('facebook', { successRedirect: 'http://localhost:8083', failureRedirect: 'http://localhost:7211' },
+    function (err, resp, req) {
+        var token = resp.token;
+    
+        //redirect pe url asta cu token ofuscat si codat. alt view pe signed in
+        req.res.redirect('http://localhost:8083/user/'+ token);
+    }));
 
 apiRoutes.post('/authenticate', function (req, res) {
     vidplatformuser.list({ include_docs: true }, function (err, response) {
